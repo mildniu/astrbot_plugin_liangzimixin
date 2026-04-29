@@ -1,0 +1,46 @@
+{
+  "id": "liangzimixin",
+  "channels": ["liangzimixin"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "appId": {
+        "type": "string",
+        "title": "应用 ID",
+        "description": "在平台申请的应用标识，用于 API 鉴权和 WS 连接",
+        "minLength": 1
+      },
+      "appSecret": {
+        "type": "string",
+        "title": "应用密钥",
+        "description": "与 appId 配对，用于签名和身份校验",
+        "minLength": 1
+      },
+      "quantumAccount": {
+        "type": "string",
+        "title": "量子账户标识（可选）",
+        "description": "绑定的服务账号/租户 ID，填写后启用量子加密模块"
+      },
+      "botUserId": {
+        "type": "string",
+        "title": "Bot 用户 ID",
+        "description": "用于 anti-loop 检查，防止处理自己发送的消息"
+      },
+      "env": {
+        "type": "string",
+        "title": "部署环境",
+        "description": "选择对接的服务器环境。staging = 联调环境，production = 线上环境",
+        "enum": ["staging", "production"],
+        "default": "production"
+      },
+      "encryptionMode": {
+        "type": "string",
+        "title": "消息加密模式",
+        "description": "quantum_only = 仅量子加密消息（所有消息必须加密）；quantum_and_plain = 同时支持加密和普通消息",
+        "enum": ["quantum_only", "quantum_and_plain"],
+        "default": "quantum_and_plain"
+      }
+    }
+  }
+}

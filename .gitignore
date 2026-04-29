@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*.pyo
+
+.DS_Store
+Thumbs.db
+
+bridge/vendor/liangzimixin/quantum-sdk/log/
+*.log
+
+.env
+.env.*

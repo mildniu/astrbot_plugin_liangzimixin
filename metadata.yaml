@@ -1,0 +1,7 @@
+name: astrbot_plugin_liangzimixin
+display_name: 量子密信平台适配器
+description: 将 liangzimixin 量子密信 OpenClaw 通道适配为 AstrBot 插件式平台适配器。
+version: 0.1.0
+author: Local Adaptation
+repo: https://github.com/AstrBotDevs/AstrBot
+astrbot_version: ">=4.16,<5"

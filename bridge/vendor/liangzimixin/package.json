@@ -1,0 +1,83 @@
+{
+  "name": "liangzimixin",
+  "version": "0.3.79",
+  "description": "Quantum-encrypted IM channel plugin for OpenClaw",
+  "type": "module",
+  "main": "index.cjs",
+  "types": "index.d.ts",
+  "files": [
+    "dist/",
+    "dist/quantum-sdk/",
+    "scripts/liangzimixin_install.sh",
+    "scripts/liangzimixin_install.bat",
+    "openclaw.plugin.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write src/**/*.ts",
+    "format:check": "prettier --check src/**/*.ts"
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "openclaw": ">=2026.2.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/ws": "^8.18.1",
+    "@typescript-eslint/eslint-plugin": "^8.56.1",
+    "@typescript-eslint/parser": "^8.56.1",
+    "eslint": "^9.39.3",
+    "openclaw": "^2026.2.26",
+    "prettier": "^3.5.3",
+    "tsup": "^8.5.1",
+    "typescript": "^5.8.3",
+    "ws": "^8.19.0",
+    "zod": "^4.3.6"
+  },
+  "keywords": [
+    "openclaw",
+    "liangzimixin",
+    "channel-plugin",
+    "instant-messaging",
+    "encryption"
+  ],
+  "openclaw": {
+    "extensions": [
+      "./index.cjs"
+    ],
+    "setupEntry": "./setup-entry.cjs",
+    "channel": {
+      "id": "liangzimixin",
+      "label": "QuantumIM",
+      "selectionLabel": "密信 IM (量子密信)",
+      "docsPath": "/channels/liangzimixin",
+      "docsLabel": "liangzimixin",
+      "blurb": "密信 IM Channel，支持量子加密的安全即时通信。",
+      "aliases": [
+        "qim"
+      ],
+      "order": 80
+    },
+    "install": {
+      "npmSpec": "liangzimixin",
+      "localPath": "extensions/liangzimixin",
+      "defaultChoice": "npm"
+    },
+    "compat": {
+      "pluginApi": "1"
+    },
+    "build": {
+      "openclawVersion": ">=2026.2.0"
+    }
+  },
+  "license": "MIT"
+}

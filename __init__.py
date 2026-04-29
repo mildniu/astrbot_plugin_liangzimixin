@@ -1,0 +1,1 @@
+"""AstrBot liangzimixin plugin package."""
