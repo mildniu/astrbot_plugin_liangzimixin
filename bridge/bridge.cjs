@@ -6,14 +6,37 @@ const path = require("path");
 const readline = require("readline");
 
 const vendorRoot = path.join(__dirname, "vendor", "liangzimixin");
-const pluginRuntime = require(path.join(vendorRoot, "index.cjs"));
-
-let instance = null;
-let runtimeConfig = null;
 
 function send(message) {
   process.stdout.write(`${JSON.stringify(message)}\n`);
 }
+
+function writeStderr(args) {
+  const text = args
+    .map((item) => {
+      if (typeof item === "string") {
+        return item;
+      }
+      try {
+        return JSON.stringify(item);
+      } catch {
+        return String(item);
+      }
+    })
+    .join(" ");
+  process.stderr.write(`${text}\n`);
+}
+
+console.log = (...args) => writeStderr(args);
+console.info = (...args) => writeStderr(args);
+console.warn = (...args) => writeStderr(args);
+console.error = (...args) => writeStderr(args);
+console.debug = (...args) => writeStderr(args);
+
+const pluginRuntime = require(path.join(vendorRoot, "index.cjs"));
+
+let instance = null;
+let runtimeConfig = null;
 
 function toErrorMessage(error) {
   if (error instanceof Error) {
@@ -90,6 +113,28 @@ function compactInternalOverrides(raw) {
   return Object.keys(next).length > 0 ? next : undefined;
 }
 
+function expandInternalOverrides(baseConfig, overrides) {
+  if (!overrides) {
+    return undefined;
+  }
+  const merged = {};
+  for (const [section, sectionValue] of Object.entries(overrides)) {
+    if (!sectionValue || typeof sectionValue !== "object") {
+      merged[section] = sectionValue;
+      continue;
+    }
+    const baseSection =
+      baseConfig && typeof baseConfig[section] === "object" && baseConfig[section] !== null
+        ? baseConfig[section]
+        : {};
+    merged[section] = {
+      ...baseSection,
+      ...sectionValue,
+    };
+  }
+  return merged;
+}
+
 async function stopInstance() {
   if (!instance) {
     runtimeConfig = null;
@@ -114,7 +159,9 @@ async function startRuntime(payload) {
     env: payload.env || "production",
     encryptionMode: payload.encryption_mode || "quantum_and_plain",
   };
-  const internalOverrides = compactInternalOverrides(payload.internal_overrides);
+  const compactedOverrides = compactInternalOverrides(payload.internal_overrides);
+  const baseConfig = pluginRuntime.buildPluginConfig(accountConfig);
+  const internalOverrides = expandInternalOverrides(baseConfig, compactedOverrides);
   instance = await pluginRuntime.startPlugin(accountConfig, internalOverrides);
   runtimeConfig = instance.config;
   const sdkRuntime = createSdkRuntime();

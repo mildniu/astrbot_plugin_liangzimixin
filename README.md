@@ -13,7 +13,7 @@
 ## 安装
 
 1. 把整个目录放到 `AstrBot/data/plugins/astrbot_plugin_liangzimixin`
-2. 确保运行 AstrBot 的环境里有 `node`
+2. 确保运行 AstrBot 的环境里有 `node`，版本建议 `20+`
 3. 在 AstrBot WebUI 里加载插件
 4. 在平台适配器里新增 `liangzimixin`
 

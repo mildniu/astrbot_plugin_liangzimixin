@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import json
 from pathlib import Path
 from typing import Any
@@ -138,6 +139,9 @@ class LiangzimixinBridgeClient:
             line = raw.decode("utf-8", errors="replace").strip()
             if not line:
                 continue
+            if not line.startswith("{"):
+                logger.info("[liangzimixin-bridge/stdout] %s", line)
+                continue
             try:
                 message = json.loads(line)
             except json.JSONDecodeError:
@@ -173,6 +177,3 @@ class LiangzimixinBridgeClient:
         for future in self._pending.values():
             if not future.done():
                 future.set_exception(BridgeClosedError(message))
-
-
-import contextlib

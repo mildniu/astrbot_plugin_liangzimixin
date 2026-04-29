@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import os
 from pathlib import Path
 from typing import Any, cast
@@ -310,6 +311,3 @@ class LiangzimixinPlatformAdapter(Platform):
                 },
             },
         }
-
-
-import contextlib
