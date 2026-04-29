@@ -23,6 +23,10 @@ class LiangzimixinMessageEvent(AstrMessageEvent):
         super().__init__(message_str, message_obj, platform_meta, session_id)
         self.adapter = adapter
 
+    def _should_encrypt_reply(self) -> bool:
+        raw_message = getattr(self.message_obj, "raw_message", {}) or {}
+        return bool(raw_message.get("is_encrypted", False))
+
     async def send(self, message: MessageChain):
         if not message.chain:
             return
@@ -30,6 +34,7 @@ class LiangzimixinMessageEvent(AstrMessageEvent):
             self.get_session_id(),
             message,
             default_reply_to=str(getattr(self.message_obj, "message_id", "") or ""),
+            encrypt_reply=self._should_encrypt_reply(),
         )
         await super().send(message)
 

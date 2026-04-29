@@ -104,6 +104,7 @@ class LiangzimixinBridgeClient:
         chat_id: str,
         text: str,
         reply_to_message_id: str | None = None,
+        skip_encrypt: bool = True,
     ) -> Any:
         return await self.request(
             "send_text",
@@ -111,6 +112,7 @@ class LiangzimixinBridgeClient:
                 "chat_id": chat_id,
                 "text": text,
                 "reply_to_message_id": reply_to_message_id or "",
+                "skip_encrypt": skip_encrypt,
             },
         )
 
@@ -119,6 +121,7 @@ class LiangzimixinBridgeClient:
         chat_id: str,
         local_path: str,
         file_name: str | None = None,
+        skip_encrypt: bool = True,
     ) -> Any:
         return await self.request(
             "send_media",
@@ -126,6 +129,7 @@ class LiangzimixinBridgeClient:
                 "chat_id": chat_id,
                 "local_path": local_path,
                 "file_name": file_name or "",
+                "skip_encrypt": skip_encrypt,
             },
             timeout=180,
         )

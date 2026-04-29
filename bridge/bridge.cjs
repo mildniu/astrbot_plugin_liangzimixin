@@ -241,6 +241,7 @@ async function sendText(payload) {
     msgType: "text",
     content: JSON.stringify({ content: payload.text || "" }),
     replyToMessageId: payload.reply_to_message_id || undefined,
+    skipEncrypt: Boolean(payload.skip_encrypt),
   });
   return { sent: true };
 }
@@ -269,7 +270,7 @@ async function sendMedia(payload) {
     maxFileSizeMb: runtimeConfig.file.maxFileSizeMb,
     chunkSizeMb: runtimeConfig.file.chunkSizeMb,
     timeoutMs: runtimeConfig.file.fetchTimeoutMs,
-    skipEncrypt: false,
+    skipEncrypt: Boolean(payload.skip_encrypt),
   });
 }
 

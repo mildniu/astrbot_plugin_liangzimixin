@@ -157,9 +157,11 @@ class LiangzimixinPlatformAdapter(Platform):
         chat_id: str,
         message_chain: MessageChain,
         default_reply_to: str | None = None,
+        encrypt_reply: bool = False,
     ) -> None:
         reply_to = default_reply_to or ""
         text_parts: list[str] = []
+        skip_encrypt = not encrypt_reply
 
         async def flush_text() -> None:
             nonlocal reply_to
@@ -167,7 +169,12 @@ class LiangzimixinPlatformAdapter(Platform):
             if not text:
                 text_parts.clear()
                 return
-            await self._send_text_chunks(chat_id, text, reply_to or None)
+            await self._send_text_chunks(
+                chat_id,
+                text,
+                reply_to or None,
+                skip_encrypt=skip_encrypt,
+            )
             text_parts.clear()
             reply_to = ""
 
@@ -186,23 +193,43 @@ class LiangzimixinPlatformAdapter(Platform):
             if isinstance(component, Image):
                 await flush_text()
                 path = await component.convert_to_file_path()
-                await self.bridge.send_media(chat_id, path, os.path.basename(path))
+                await self.bridge.send_media(
+                    chat_id,
+                    path,
+                    os.path.basename(path),
+                    skip_encrypt=skip_encrypt,
+                )
                 continue
             if isinstance(component, Record):
                 await flush_text()
                 path = await component.convert_to_file_path()
-                await self.bridge.send_media(chat_id, path, os.path.basename(path))
+                await self.bridge.send_media(
+                    chat_id,
+                    path,
+                    os.path.basename(path),
+                    skip_encrypt=skip_encrypt,
+                )
                 continue
             if isinstance(component, Video):
                 await flush_text()
                 path = await component.convert_to_file_path()
-                await self.bridge.send_media(chat_id, path, os.path.basename(path))
+                await self.bridge.send_media(
+                    chat_id,
+                    path,
+                    os.path.basename(path),
+                    skip_encrypt=skip_encrypt,
+                )
                 continue
             if isinstance(component, File):
                 await flush_text()
                 path = await component.get_file()
                 name = component.name or os.path.basename(path)
-                await self.bridge.send_media(chat_id, path, name)
+                await self.bridge.send_media(
+                    chat_id,
+                    path,
+                    name,
+                    skip_encrypt=skip_encrypt,
+                )
                 continue
 
             text_parts.append(f"[{component.type}]")
@@ -214,6 +241,7 @@ class LiangzimixinPlatformAdapter(Platform):
         chat_id: str,
         text: str,
         reply_to_message_id: str | None = None,
+        skip_encrypt: bool = True,
         chunk_size: int = 1800,
     ) -> None:
         remaining = text
@@ -221,7 +249,12 @@ class LiangzimixinPlatformAdapter(Platform):
         while remaining:
             chunk = remaining[:chunk_size]
             remaining = remaining[chunk_size:]
-            await self.bridge.send_text(chat_id, chunk, first_reply)
+            await self.bridge.send_text(
+                chat_id,
+                chunk,
+                first_reply,
+                skip_encrypt=skip_encrypt,
+            )
             first_reply = None
 
     async def _consume_bridge_events(self) -> None:
