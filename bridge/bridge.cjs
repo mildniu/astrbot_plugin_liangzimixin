@@ -122,6 +122,20 @@ function hasEmbeddedAuthInUrl(url) {
   }
 }
 
+function normalizeDuplicateSlashesInPath(url) {
+  try {
+    const parsed = new URL(url);
+    if (!parsed.pathname.includes("//")) {
+      return "";
+    }
+    parsed.pathname = parsed.pathname.replace(/\/{2,}/g, "/");
+    const normalized = parsed.toString();
+    return normalized === url ? "" : normalized;
+  } catch {
+    return "";
+  }
+}
+
 function createSdkRuntime(deps = {}) {
   const {
     tokenManager = null,
@@ -134,12 +148,13 @@ function createSdkRuntime(deps = {}) {
         async fetchRemoteMedia({ url, headers = {} }) {
           const trusted = isTrustedDownloadUrl(url, trustedHosts);
           const embeddedAuth = hasEmbeddedAuthInUrl(url);
+          const normalizedSignedUrl = normalizeDuplicateSlashesInPath(url);
           const hasAuthHeader = Object.keys(headers).some(
             (key) => key.toLowerCase() === "authorization",
           );
           let accessToken = "";
 
-          if (trusted && !hasAuthHeader && tokenManager) {
+          if (trusted && !hasAuthHeader && !embeddedAuth && tokenManager) {
             try {
               accessToken = await tokenManager.getValidToken();
             } catch (error) {
@@ -152,22 +167,34 @@ function createSdkRuntime(deps = {}) {
 
           const candidates = [];
           const seen = new Set();
-          const pushCandidate = (candidateHeaders, label) => {
-            const serialized = JSON.stringify(candidateHeaders || {});
+          const pushCandidate = (candidateUrl, candidateHeaders, label) => {
+            const serialized = JSON.stringify({
+              url: candidateUrl,
+              headers: candidateHeaders || {},
+            });
             if (seen.has(serialized)) {
               return;
             }
             seen.add(serialized);
-            candidates.push({ headers: candidateHeaders || {}, label });
+            candidates.push({
+              url: candidateUrl,
+              headers: candidateHeaders || {},
+              label,
+            });
           };
 
-          pushCandidate(headers, embeddedAuth ? "embedded-auth-url" : "plain-url");
-          if (trusted && accessToken && !hasAuthHeader) {
+          pushCandidate(url, headers, embeddedAuth ? "embedded-auth-url" : "plain-url");
+          if (normalizedSignedUrl) {
+            pushCandidate(normalizedSignedUrl, headers, "normalized-path");
+          }
+          if (trusted && accessToken && !hasAuthHeader && !embeddedAuth) {
             pushCandidate(
+              url,
               { ...headers, Authorization: `Bearer ${accessToken}` },
               "bearer-token",
             );
             pushCandidate(
+              url,
               { ...headers, Authorization: accessToken },
               "raw-token",
             );
@@ -176,13 +203,13 @@ function createSdkRuntime(deps = {}) {
           let lastStatus = 0;
           let lastBody = "";
           for (const candidate of candidates) {
-            const response = await fetch(url, {
+            const response = await fetch(candidate.url, {
               headers: candidate.headers,
               redirect: "follow",
             });
             if (response.ok) {
               console.info("fetchRemoteMedia succeeded", {
-                url,
+                url: candidate.url,
                 strategy: candidate.label,
               });
               const buffer = Buffer.from(await response.arrayBuffer());
@@ -207,7 +234,7 @@ function createSdkRuntime(deps = {}) {
               );
 
             console.warn("fetchRemoteMedia failed attempt", {
-              url,
+              url: candidate.url,
               strategy: candidate.label,
               status: response.status,
               body: lastBody,
