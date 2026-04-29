@@ -103,6 +103,25 @@ function isTrustedDownloadUrl(url, trustedHosts) {
   }
 }
 
+function hasEmbeddedAuthInUrl(url) {
+  try {
+    const params = new URL(url).searchParams;
+    const authKeys = [
+      "x-amz-signature",
+      "x-amz-credential",
+      "signature",
+      "accesskeyid",
+      "ossaccesskeyid",
+      "security-token",
+      "token",
+      "expires",
+    ];
+    return authKeys.some((key) => params.has(key));
+  } catch {
+    return false;
+  }
+}
+
 function createSdkRuntime(deps = {}) {
   const {
     tokenManager = null,
@@ -114,6 +133,7 @@ function createSdkRuntime(deps = {}) {
       media: {
         async fetchRemoteMedia({ url, headers = {} }) {
           const trusted = isTrustedDownloadUrl(url, trustedHosts);
+          const embeddedAuth = hasEmbeddedAuthInUrl(url);
           const hasAuthHeader = Object.keys(headers).some(
             (key) => key.toLowerCase() === "authorization",
           );
@@ -132,29 +152,39 @@ function createSdkRuntime(deps = {}) {
 
           const candidates = [];
           const seen = new Set();
-          const pushCandidate = (candidateHeaders) => {
-            const serialized = JSON.stringify(candidateHeaders);
+          const pushCandidate = (candidateHeaders, label) => {
+            const serialized = JSON.stringify(candidateHeaders || {});
             if (seen.has(serialized)) {
               return;
             }
             seen.add(serialized);
-            candidates.push(candidateHeaders);
+            candidates.push({ headers: candidateHeaders || {}, label });
           };
 
+          pushCandidate(headers, embeddedAuth ? "embedded-auth-url" : "plain-url");
           if (trusted && accessToken && !hasAuthHeader) {
-            pushCandidate({ ...headers, Authorization: `Bearer ${accessToken}` });
-            pushCandidate({ ...headers, Authorization: accessToken });
+            pushCandidate(
+              { ...headers, Authorization: `Bearer ${accessToken}` },
+              "bearer-token",
+            );
+            pushCandidate(
+              { ...headers, Authorization: accessToken },
+              "raw-token",
+            );
           }
-          pushCandidate(headers);
 
           let lastStatus = 0;
           let lastBody = "";
-          for (const candidateHeaders of candidates) {
+          for (const candidate of candidates) {
             const response = await fetch(url, {
-              headers: candidateHeaders,
+              headers: candidate.headers,
               redirect: "follow",
             });
             if (response.ok) {
+              console.info("fetchRemoteMedia succeeded", {
+                url,
+                strategy: candidate.label,
+              });
               const buffer = Buffer.from(await response.arrayBuffer());
               return {
                 buffer,
@@ -169,7 +199,22 @@ function createSdkRuntime(deps = {}) {
               lastBody = "";
             }
 
-            if (![401, 403].includes(response.status)) {
+            const shouldRetry =
+              [401, 403].includes(response.status) ||
+              (
+                response.status === 400 &&
+                lastBody.toLowerCase().includes("multiple authentication types")
+              );
+
+            console.warn("fetchRemoteMedia failed attempt", {
+              url,
+              strategy: candidate.label,
+              status: response.status,
+              body: lastBody,
+              retry: shouldRetry,
+            });
+
+            if (!shouldRetry) {
               break;
             }
           }
