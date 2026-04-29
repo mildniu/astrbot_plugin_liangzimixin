@@ -295,7 +295,11 @@ class LiangzimixinPlatformAdapter(Platform):
             components.append(Plain(text))
 
         local_path = str(media.get("local_path") or "")
-        resource_type = str(media.get("resource_type") or "")
+        resource_type = self._resolve_inbound_resource_type(
+            msg_type,
+            media,
+            local_path,
+        )
         file_name = str(media.get("file_name") or os.path.basename(local_path) or "attachment")
         if local_path:
             if resource_type == "image":
@@ -399,3 +403,42 @@ class LiangzimixinPlatformAdapter(Platform):
             "_" if char in '<>:"/\\|?*' or ord(char) < 32 else char
             for char in safe_name
         )
+
+    @staticmethod
+    def _resolve_inbound_resource_type(
+        msg_type: str,
+        media: dict[str, Any],
+        local_path: str,
+    ) -> str:
+        resource_type = str(media.get("resource_type") or "").strip().lower()
+        mime_type = str(media.get("mime_type") or "").strip().lower()
+        file_name = str(media.get("file_name") or os.path.basename(local_path) or "").lower()
+        suffix = Path(file_name).suffix.lower()
+
+        if msg_type in {"image", "voice", "video", "file"}:
+            # 平台原始消息类型比 download 返回的 octet-stream 更可靠。
+            if msg_type == "image":
+                return "image"
+            if msg_type == "voice":
+                return "voice"
+            if msg_type == "video":
+                return "video"
+            if resource_type:
+                return resource_type
+            return "file"
+
+        if resource_type in {"image", "voice", "video", "file"}:
+            return resource_type
+        if mime_type.startswith("image/"):
+            return "image"
+        if mime_type.startswith("audio/"):
+            return "voice"
+        if mime_type.startswith("video/"):
+            return "video"
+        if suffix in {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".heic"}:
+            return "image"
+        if suffix in {".mp3", ".wav", ".ogg", ".m4a", ".aac", ".amr"}:
+            return "voice"
+        if suffix in {".mp4", ".mov", ".avi", ".mkv", ".webm"}:
+            return "video"
+        return "file"
