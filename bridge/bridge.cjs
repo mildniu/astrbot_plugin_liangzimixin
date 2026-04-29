@@ -57,20 +57,125 @@ function guessExtension(contentType) {
   return ".bin";
 }
 
-function createSdkRuntime() {
+function buildTrustedHostMatchers(urls = []) {
+  const exactHosts = new Set();
+  const suffixHosts = new Set();
+
+  for (const rawUrl of urls) {
+    if (!rawUrl) {
+      continue;
+    }
+    try {
+      const hostname = new URL(rawUrl).hostname.toLowerCase();
+      if (!hostname) {
+        continue;
+      }
+      exactHosts.add(hostname);
+      const parts = hostname.split(".").filter(Boolean);
+      if (parts.length >= 2) {
+        suffixHosts.add(parts.slice(-2).join("."));
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return {
+    exactHosts: [...exactHosts],
+    suffixHosts: [...suffixHosts],
+  };
+}
+
+function isTrustedDownloadUrl(url, trustedHosts) {
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    if (!hostname) {
+      return false;
+    }
+    if (trustedHosts.exactHosts.includes(hostname)) {
+      return true;
+    }
+    return trustedHosts.suffixHosts.some(
+      (suffix) => hostname === suffix || hostname.endsWith(`.${suffix}`),
+    );
+  } catch {
+    return false;
+  }
+}
+
+function createSdkRuntime(deps = {}) {
+  const {
+    tokenManager = null,
+    trustedHosts = { exactHosts: [], suffixHosts: [] },
+  } = deps;
+
   return {
     channel: {
       media: {
-        async fetchRemoteMedia({ url }) {
-          const response = await fetch(url);
-          if (!response.ok) {
-            throw new Error(`fetchRemoteMedia failed: HTTP ${response.status}`);
+        async fetchRemoteMedia({ url, headers = {} }) {
+          const trusted = isTrustedDownloadUrl(url, trustedHosts);
+          const hasAuthHeader = Object.keys(headers).some(
+            (key) => key.toLowerCase() === "authorization",
+          );
+          let accessToken = "";
+
+          if (trusted && !hasAuthHeader && tokenManager) {
+            try {
+              accessToken = await tokenManager.getValidToken();
+            } catch (error) {
+              console.warn("fetchRemoteMedia token acquire failed", {
+                url,
+                error: toErrorMessage(error),
+              });
+            }
           }
-          const buffer = Buffer.from(await response.arrayBuffer());
-          return {
-            buffer,
-            contentType: response.headers.get("content-type") || "",
+
+          const candidates = [];
+          const seen = new Set();
+          const pushCandidate = (candidateHeaders) => {
+            const serialized = JSON.stringify(candidateHeaders);
+            if (seen.has(serialized)) {
+              return;
+            }
+            seen.add(serialized);
+            candidates.push(candidateHeaders);
           };
+
+          if (trusted && accessToken && !hasAuthHeader) {
+            pushCandidate({ ...headers, Authorization: `Bearer ${accessToken}` });
+            pushCandidate({ ...headers, Authorization: accessToken });
+          }
+          pushCandidate(headers);
+
+          let lastStatus = 0;
+          let lastBody = "";
+          for (const candidateHeaders of candidates) {
+            const response = await fetch(url, {
+              headers: candidateHeaders,
+              redirect: "follow",
+            });
+            if (response.ok) {
+              const buffer = Buffer.from(await response.arrayBuffer());
+              return {
+                buffer,
+                contentType: response.headers.get("content-type") || "",
+              };
+            }
+
+            lastStatus = response.status;
+            try {
+              lastBody = (await response.text()).slice(0, 200);
+            } catch {
+              lastBody = "";
+            }
+
+            if (![401, 403].includes(response.status)) {
+              break;
+            }
+          }
+
+          const details = lastBody ? ` ${lastBody}` : "";
+          throw new Error(`fetchRemoteMedia failed: HTTP ${lastStatus}${details}`);
         },
         async saveMediaBuffer(buffer, contentType, scope, maxBytes, fileName) {
           if (buffer.length > maxBytes) {
@@ -164,7 +269,15 @@ async function startRuntime(payload) {
   const internalOverrides = expandInternalOverrides(baseConfig, compactedOverrides);
   instance = await pluginRuntime.startPlugin(accountConfig, internalOverrides);
   runtimeConfig = instance.config;
-  const sdkRuntime = createSdkRuntime();
+  const sdkRuntime = createSdkRuntime({
+    tokenManager: instance.tokenManager,
+    trustedHosts: buildTrustedHostMatchers([
+      runtimeConfig.transport?.wsUrl,
+      runtimeConfig.auth?.serverUrl,
+      runtimeConfig.message?.messageServiceBaseUrl,
+      runtimeConfig.file?.fileServiceBaseUrl,
+    ]),
+  });
 
   instance.messagePipe.onMessage((message) => {
     void handleInbound(message, sdkRuntime);
@@ -250,7 +363,15 @@ async function sendMedia(payload) {
   if (!instance || !runtimeConfig) {
     throw new Error("runtime not started");
   }
-  const sdkRuntime = createSdkRuntime();
+  const sdkRuntime = createSdkRuntime({
+    tokenManager: instance.tokenManager,
+    trustedHosts: buildTrustedHostMatchers([
+      runtimeConfig.transport?.wsUrl,
+      runtimeConfig.auth?.serverUrl,
+      runtimeConfig.message?.messageServiceBaseUrl,
+      runtimeConfig.file?.fileServiceBaseUrl,
+    ]),
+  });
   const localPath = payload.local_path;
   const fileName = payload.file_name || path.basename(localPath);
   const allowedLocalRoots = [

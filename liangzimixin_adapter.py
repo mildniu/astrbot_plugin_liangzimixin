@@ -1,8 +1,10 @@
 import asyncio
 import contextlib
 import os
+import shutil
 from pathlib import Path
 from typing import Any, cast
+from uuid import uuid4
 
 from astrbot.api import logger
 from astrbot.api.event import MessageChain
@@ -17,6 +19,8 @@ from astrbot.api.platform import (
     register_platform_adapter,
 )
 from astrbot.core.platform.astr_message_event import MessageSesion
+from astrbot.core.tools.computer_tools.util import normalize_umo_for_workspace
+from astrbot.core.utils.astrbot_path import get_astrbot_workspaces_path
 
 from .bridge_client import LiangzimixinBridgeClient
 from .liangzimixin_event import LiangzimixinMessageEvent
@@ -263,6 +267,7 @@ class LiangzimixinPlatformAdapter(Platform):
             if event.get("type") != "inbound":
                 continue
             payload = cast(dict[str, Any], event.get("payload", {}))
+            original_local_path = self._stage_inbound_media_to_workspace(payload)
             astr_message = self._build_astr_message(payload)
             message_event = LiangzimixinMessageEvent(
                 message_str=astr_message.message_str,
@@ -271,10 +276,8 @@ class LiangzimixinPlatformAdapter(Platform):
                 session_id=astr_message.session_id,
                 adapter=self,
             )
-            media = payload.get("media") or {}
-            local_path = media.get("local_path")
-            if local_path:
-                message_event.track_temporary_local_file(local_path)
+            if original_local_path:
+                message_event.track_temporary_local_file(original_local_path)
             self.commit_event(message_event)
 
     def _build_astr_message(self, payload: dict[str, Any]) -> AstrBotMessage:
@@ -344,3 +347,55 @@ class LiangzimixinPlatformAdapter(Platform):
                 },
             },
         }
+
+    def _stage_inbound_media_to_workspace(self, payload: dict[str, Any]) -> str:
+        media = cast(dict[str, Any], payload.get("media") or {})
+        local_path = str(media.get("local_path") or "")
+        if not local_path or not os.path.exists(local_path):
+            return ""
+
+        session_id = str(payload.get("group_id") or payload.get("chat_id") or "")
+        if not session_id:
+            return local_path
+
+        group_id = str(payload.get("group_id") or "")
+        message_type = (
+            MessageType.GROUP_MESSAGE.value
+            if group_id
+            else MessageType.FRIEND_MESSAGE.value
+        )
+        file_name = str(
+            media.get("file_name") or os.path.basename(local_path) or "attachment"
+        )
+
+        try:
+            umo = f"{self.meta().id}:{message_type}:{session_id}"
+            workspace_dir = (
+                Path(get_astrbot_workspaces_path())
+                / normalize_umo_for_workspace(umo)
+                / "inbound_files"
+            )
+            workspace_dir.mkdir(parents=True, exist_ok=True)
+
+            safe_name = self._sanitize_workspace_file_name(file_name)
+            target = workspace_dir / safe_name
+            if target.exists():
+                stem = Path(safe_name).stem or "attachment"
+                suffix = Path(safe_name).suffix
+                target = workspace_dir / f"{stem}_{uuid4().hex[:8]}{suffix}"
+
+            shutil.copy2(local_path, target)
+            media["local_path"] = str(target)
+            logger.info("staged inbound media to workspace: %s", target)
+        except Exception as exc:
+            logger.warning("stage inbound media to workspace failed: %s", exc)
+
+        return local_path
+
+    @staticmethod
+    def _sanitize_workspace_file_name(file_name: str) -> str:
+        safe_name = os.path.basename(file_name.strip()) or "attachment"
+        return "".join(
+            "_" if char in '<>:"/\\|?*' or ord(char) < 32 else char
+            for char in safe_name
+        )
