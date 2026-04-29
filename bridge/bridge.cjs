@@ -1,6 +1,8 @@
 "use strict";
 
 const fs = require("fs");
+const http = require("http");
+const https = require("https");
 const os = require("os");
 const path = require("path");
 const readline = require("readline");
@@ -106,9 +108,17 @@ function isTrustedDownloadUrl(url, trustedHosts) {
 function hasEmbeddedAuthInUrl(url) {
   try {
     const params = new URL(url).searchParams;
+    const lowerKeys = new Set();
+    for (const key of params.keys()) {
+      lowerKeys.add(String(key).toLowerCase());
+    }
     const authKeys = [
       "x-amz-signature",
       "x-amz-credential",
+      "x-amz-algorithm",
+      "x-amz-date",
+      "x-amz-expires",
+      "x-amz-signedheaders",
       "signature",
       "accesskeyid",
       "ossaccesskeyid",
@@ -116,7 +126,7 @@ function hasEmbeddedAuthInUrl(url) {
       "token",
       "expires",
     ];
-    return authKeys.some((key) => params.has(key));
+    return authKeys.some((key) => lowerKeys.has(key));
   } catch {
     return false;
   }
@@ -134,6 +144,49 @@ function normalizeDuplicateSlashesInPath(url) {
   } catch {
     return "";
   }
+}
+
+function requestBinary(candidateUrl, headers = {}) {
+  return new Promise((resolve, reject) => {
+    let parsed;
+    try {
+      parsed = new URL(candidateUrl);
+    } catch (error) {
+      reject(error);
+      return;
+    }
+
+    const client = parsed.protocol === "https:" ? https : http;
+    const request = client.request(
+      {
+        protocol: parsed.protocol,
+        hostname: parsed.hostname,
+        port: parsed.port || undefined,
+        path: `${parsed.pathname}${parsed.search}`,
+        method: "GET",
+        headers,
+      },
+      (response) => {
+        const chunks = [];
+        response.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+        response.on("end", () => {
+          const body = Buffer.concat(chunks);
+          resolve({
+            ok: response.statusCode >= 200 && response.statusCode < 300,
+            status: response.statusCode || 0,
+            headers: response.headers,
+            body,
+            text() {
+              return body.toString("utf-8");
+            },
+          });
+        });
+      },
+    );
+
+    request.on("error", reject);
+    request.end();
+  });
 }
 
 function createSdkRuntime(deps = {}) {
@@ -203,25 +256,26 @@ function createSdkRuntime(deps = {}) {
           let lastStatus = 0;
           let lastBody = "";
           for (const candidate of candidates) {
-            const response = await fetch(candidate.url, {
-              headers: candidate.headers,
-              redirect: "follow",
-            });
+            const response = await requestBinary(candidate.url, candidate.headers);
             if (response.ok) {
               console.info("fetchRemoteMedia succeeded", {
                 url: candidate.url,
                 strategy: candidate.label,
               });
-              const buffer = Buffer.from(await response.arrayBuffer());
+              const buffer = Buffer.from(response.body);
+              const rawContentType = response.headers["content-type"];
+              const contentType = Array.isArray(rawContentType)
+                ? rawContentType[0] || ""
+                : rawContentType || "";
               return {
                 buffer,
-                contentType: response.headers.get("content-type") || "",
+                contentType,
               };
             }
 
             lastStatus = response.status;
             try {
-              lastBody = (await response.text()).slice(0, 200);
+              lastBody = response.text().slice(0, 200);
             } catch {
               lastBody = "";
             }
